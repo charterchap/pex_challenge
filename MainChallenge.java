@@ -1,199 +1,139 @@
-
 import java.io.*;
 import java.awt.*;
 import java.net.*;
-import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.awt.image.ColorModel;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
-import java.nio.file.*;
-import java.util.Set;
-import java.util.Iterator;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
-import static java.util.function.Function.identity;
-import static java.util.stream.Collectors.*;
+import java.nio.file.*;
+import java.util.List;
 import java.util.stream.*;
-import javax.imageio.*;
 import java.io.BufferedReader;
 import java.io.FileReader;
 
-import java.util.concurrent.Callable;
-import java.util.concurrent.Future;
-import java.util.concurrent.CompletionService;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorCompletionService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.*;
-// import ImageWorker;
 
 
-
-class StaticVar {
+/**
+ * class so we can have a shared memory size tracker
+ * needs a mutex before the threadpool can increase above 1
+ */
+class SharedSize {
     static long var=0;
 }
 
-public class MainChallenge {
 
-    public static BufferedImage getImageFromWeb(String path) throws IOException {
-        BufferedImage image = null;
-        try {
-            URL url = new URL(path);
-            image = ImageIO.read(url);
-        } catch (IOException e) {
-        }
-        return image;
+/**
+ * basic pair class
+ */
+class Pair<A,B>{
+    A x;
+    B y;
+    public Pair(A x, B y) {
+        this.x = x;
+        this.y = y;
     }
+}
+
+
+public class MainChallenge {
 
     /**
      * Returns an Integer Array up to length 3 with the top three colors
      * represented as a 24-bit RGB color found in the image provided to this
      * function
      *
-     * @param  ImageName  file path to the image
+     * @param  bufferedImage a BufferedImage
+     * @return an array of size 3 with the top 3 colors as an int. If there is 
+     *         less than 3 top color it will return a 0 instead. Since 0 is 
+     *         black, this is an obvious bug that would need to be dealt with.
+     *         0th element is highest
      */
     public static Integer [] getTopColors(BufferedImage bufferedImage) throws IOException {
-        // open image
-        // File imgPath = new File(ImageName);
-        // BufferedImage bufferedImage = ImageIO.read(imgPath);
-
-        // get DataBufferBytes from Raster
-        // WritableRaster raster = bufferedImage .getRaster();
-        // DataBufferByte data   = (DataBufferByte) raster.getDataBuffer();
         int width = bufferedImage.getWidth();
         int height = bufferedImage.getHeight();
         int[] colorData = new int[height*width];
         Map<Integer, Integer> mdata = new HashMap<>();
 
+        // This is not the most generalized way of doing this, but it should cut
+        // down on memory usage. I think normally it would be better to have an
+        // array of pairs and sort them in the end.
+        Pair<Integer, Integer> one = new Pair<Integer, Integer>(0,0); // bug see doc above
+        Pair<Integer, Integer> two = new Pair<Integer, Integer>(0,0);
+        Pair<Integer, Integer> three = new Pair<Integer, Integer>(0,0);
+
         for (int row = 0; row < height; row++) {
             for (int col = 0; col < width; col++) {
                 colorData[row*width+col] = bufferedImage.getRGB(col, row);
-                mdata.merge(bufferedImage.getRGB(col, row) & 0xFFFFFF, 1, Integer::sum);
+                Integer key = bufferedImage.getRGB(col, row) & 0xFFFFFF;
+                mdata.merge(key, 1, Integer::sum);
+
+                if     (mdata.get(key) >= one.y){ one = new Pair<Integer,Integer>(key,mdata.get(key));}
+                else if(mdata.get(key) >= two.y){ two = new Pair<Integer,Integer>(key,mdata.get(key));}
+                else if(mdata.get(key) > three.y){ three = new Pair<Integer,Integer>(key,mdata.get(key));}
             }
         }
 
-        LinkedHashMap<Integer, Integer> sortedMap = 
-            mdata.entrySet().stream().
-            sorted(Map.Entry.comparingByValue(Comparator.reverseOrder())).
-            collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                                     (e1, e2) -> e1, LinkedHashMap::new));
-        // System.out.println()
-        // return String.valueOf(linkedmap.entrySet().toArray()[linkedmap.size() - 1]);
-
-        // System.out.println(sortedMap.entrySet().toArray()[sortedMap.size() - 1]);
-
-        // System.out.println(sortedMap.keySet().toArray().getClass().getSimpleName());
-        Integer [] a = sortedMap.keySet().toArray(new Integer[0]);
-
-        Integer [] b = Arrays.copyOfRange(a, 0, 3);
-
-        // Arrays.copyOfRange(oldArray, startIndex, endIndex)
-
-        // System.out.println(b);
-        // System.out.println(Integer.toHexString(sortedMap.entrySet().toArray()[sortedMap.size() - 1]));
-        // System.out.println(Integer.toHexString(b[0]));
-        // System.out.println(Integer.toHexString(b[1]));
-        // System.out.println(Integer.toHexString(b[2]));
-        // System.out.println(sortedMap);
-        // 2ECC71, E74C3C, 32CB72
-        // int [] rgb_array = bufferedImage.getRGB()
-
+        Integer [] b = {one.x,two.x,three.x};
         return b;
     }
 
-    public static void printThree(String path) {
-        try {
-            
-            Integer [] cm = getTopColors(getImageFromWeb(path));
-            for( int val : cm){
-                System.out.println(Integer.toHexString(val));
-            }
-        } catch (IOException ignore){
-            System.out.println(ignore);
-        }
-    }
 
-    public static void printThree_b(BufferedImage bufferedImage) {
+    public static void processImage(Pair<String, BufferedImage> bufferedImage) {
+        String csv_line = bufferedImage.x;
+
         try {
-            if(bufferedImage != null) {
-                StaticVar shared_size = new StaticVar();
-                Integer [] cm = getTopColors(bufferedImage);
-                for( int val : cm){
-                    System.out.println(Integer.toHexString(val));
+            if(bufferedImage.y != null) {
+                Integer [] top_colors = getTopColors(bufferedImage.y);
+
+                for(int val : top_colors){
+                    csv_line += String.format(",#%06X",val);
                 }
-                long imageSize = ((long)bufferedImage.getData().getDataBuffer().getSize()) * 4l;
 
-                shared_size.var -= imageSize;
-                System.out.println("psize is:" + shared_size.var +" : "+imageSize);
+                // uncount memory
+                long imageSize = ((long)bufferedImage.y.getData().getDataBuffer().getSize()) * 4l;
+                SharedSize.var -= imageSize; //thread safety?
             } else {
-                System.out.println("Image not valid, unable to process");
+                csv_line += ",0,0,0"; // Obviously not the best error handling
+                System.out.println("Image not valid, unable to process: "+bufferedImage.x);
             }
         } catch (IOException ignore){
             System.out.println(ignore);
         }
+
+        try(FileWriter fw = new FileWriter("output.csv", true);
+            BufferedWriter bw = new BufferedWriter(fw);
+            PrintWriter out = new PrintWriter(bw))
+        {
+            out.println(csv_line);
+            System.out.println(csv_line);
+        } catch (IOException e) {
+            System.out.println("Could not write to csv file");
+        }
     }
 
-
-    // public static void main(String[] args) {
-        
-    //     try {
-    //         Stream<String> lines = Files.lines(Paths.get(".", "input.txt"));
-    //         lines.forEach(MainChallenge::printThree);
-            
-    //     //     Integer [] cm = getTopColors(getImageFromWeb("http://i.imgur.com/TKLs9lo.jpg"));
-    //     //     for( int val : cm){
-    //     //         System.out.println(Integer.toHexString(val));
-    //     //     }
-    //     } catch (IOException ignore){
-    //         System.out.println(ignore);
-    //     }
-    // }
 
     public static void main(String[] args) throws InterruptedException, ExecutionException {
-        // Executor ex= Executors.newCachedThreadPool();
         ExecutorService pool = Executors.newFixedThreadPool(1);
-        CompletionService<BufferedImage> cs = new ExecutorCompletionService<BufferedImage>(pool);
+        CompletionService<Pair<String, BufferedImage>> cs = new ExecutorCompletionService<Pair<String, BufferedImage>>(pool);
         
         
         try {
             List<String> allLines = Files.readAllLines(Paths.get(".", "input.txt"));
             int job_count = 0;
             for (String line : allLines) {
-                cs.submit(new ImageWorker(line, new StaticVar()));
-                System.out.println(line);
-
+                cs.submit(new ImageWorker(line));
             }
 
             pool.shutdown();
             try {
               while (!pool.isTerminated()) {
-                final Future<BufferedImage> future = cs.take();
-                System.out.println("got a future");
-                printThree_b(future.get());
+                final Future<Pair<String, BufferedImage>> future = cs.take();
+                processImage(future.get());
                 System.gc();
                 job_count++;
-                System.out.println("j c:" +job_count);
               }
             } catch (ExecutionException | InterruptedException ex) { }
-            // for(int i=0; i < job_count; i++){
-            //     printThree_b(cs.take().get());
-            // }
-
-            // Stream<String> lines = Files.lines(Paths.get(".", "input.txt"));
-            // for(String l : lines) {
-            //     System.out.println(l);
-            // }
-            // lines.forEach(MainChallenge::printThree);
-            
-        //     Integer [] cm = getTopColors(getImageFromWeb("http://i.imgur.com/TKLs9lo.jpg"));
-        //     for( int val : cm){
-        //         System.out.println(Integer.toHexString(val));
-        //     }
         } catch (IOException ignore){
             System.out.println(ignore);
         }

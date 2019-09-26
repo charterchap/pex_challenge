@@ -1,6 +1,6 @@
 # Pex Challenge
 
-This is a solution the a coding challenge. 
+This is a solution to a coding challenge. 
  - assumes that top color means a strict pixel count by absolute color value
  - assumes output result order does not matter
  - this is the first java code I have written in years
